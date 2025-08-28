@@ -1,0 +1,77 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Machines {
+  id         String           @id @default(cuid())
+  name       String
+  region     String
+  url        String
+  token      String
+  stats      Json?
+  snapshots  Snapshots[]
+  settings   MachineSettings?
+  backupRuns BackupRuns[]
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @default(now()) @updatedAt
+}
+
+model MachineSettings {
+  id        String   @id @default(cuid())
+  machineId String   @unique
+  machine   Machines @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  paths     String[]
+  exclude   String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Snapshots {
+  id         String   @id @default(cuid())
+  machineId  String
+  machine    Machines @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  shortId    String
+  size       Float
+  createdAt  DateTime @default(now())
+}
+
+model BackupRuns {
+  id         String    @id @default(cuid())
+  machineId  String
+  machine    Machines  @relation(fields: [machineId], references: [id], onDelete: Cascade)
+  snapshotId String? // null until we get the snapshot ID from the backup
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  status     String    @default("running") // 'running', 'completed', 'failed'
+  error      String? // error message if failed
+
+  progress BackupProgress[]
+
+  @@index([machineId])
+  @@index([startedAt])
+  @@index([status])
+}
+
+model BackupProgress {
+  id          String     @id @default(cuid())
+  backupRunId String
+  backupRun   BackupRuns @relation(fields: [backupRunId], references: [id], onDelete: Cascade)
+  timestamp   DateTime   @default(now())
+  data        Json // the actual progress data
+  step        String? // backup step for easier querying
+
+  @@index([backupRunId, timestamp])
+  @@index([step])
+}

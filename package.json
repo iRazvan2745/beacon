@@ -1,0 +1,24 @@
+{
+  "name": "beacon-server",
+  "version": "1.0.0",
+  "description": "Restic backup API for Pterodactyl data with R2 storage",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev:server": "bun --watch src/index.ts",
+    "dev:web": "cd web && bun run dev",
+    "dev": "concurrently --kill-others --prefix-colors red,blue --names 'server,web' 'bun run dev:server' 'cd web && bun run dev --port 3001'"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.0",
+    "consola": "^3.4.2",
+    "hono": "^4.9.4"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "concurrently": "^9.1.2"
+  },
+  "peerDependencies": {
+    "typescript": "^5.9.2"
+  }
+}

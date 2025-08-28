@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "target": "es2020",          // or "es2022"
+    "module": "esnext",          // enables top-level await
+    "moduleResolution": "node",  // standard for Node.js
+    "strict": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  }
+}

@@ -1,0 +1,436 @@
+openapi: 3.1.0
+info:
+  title: beacon
+  version: 1.0.0
+
+servers:
+  - url: http://127.0.0.1:3000
+    description: Local server
+
+tags:
+  - name: Health
+  - name: Backup
+  - name: Files
+
+paths:
+  /:
+    get:
+      tags: [Health]
+      summary: Root info
+      operationId: getRoot
+      responses:
+        "200":
+          description: Root metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  version: { type: string }
+                  endpoints:
+                    type: object
+                    additionalProperties: true
+                  timestamp: { type: string, format: date-time }
+  /health:
+    get:
+      tags: [Health]
+      summary: Health information
+      operationId: getHealth
+      responses:
+        "200":
+          description: Health details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  service: { type: string }
+                  version: { type: string }
+                  timestamp: { type: string, format: date-time }
+                  config:
+                    type: object
+                    properties:
+                      backupPath: { type: string }
+                      s3Bucket: { type: string, nullable: true }
+                      s3Endpoint: { type: string, nullable: true }
+                      retentionPolicy:
+                        $ref: "#/components/schemas/RetentionPolicy"
+  /health/ping:
+    get:
+      tags: [Health]
+      summary: Ping
+      operationId: ping
+      responses:
+        "200":
+          description: Pong
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pong: { type: boolean }
+                  timestamp: { type: string, format: date-time }
+
+  /api/backup:
+    post:
+      tags: [Backup]
+      summary: Run a backup now
+      operationId: runBackup
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Backup completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupResponse"
+        "500":
+          description: Backup failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/backup/init:
+    post:
+      tags: [Backup]
+      summary: Initialize repository
+      operationId: initRepository
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Repository initialized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleOkResponse"
+        "500":
+          description: Initialization failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/backup/check:
+    post:
+      tags: [Backup]
+      summary: Check repository integrity
+      operationId: checkRepository
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Check passed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleOkResponse"
+        "500":
+          description: Check failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/backup/snapshots:
+    get:
+      tags: [Backup]
+      summary: List snapshots
+      operationId: listSnapshots
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of snapshots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  count: { type: integer }
+                  snapshots:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Snapshot"
+                  timestamp: { type: string, format: date-time }
+        "500":
+          description: Error listing snapshots
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/backup/stats:
+    get:
+      tags: [Backup]
+      summary: Repository statistics
+      operationId: getStats
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  stats:
+                    $ref: "#/components/schemas/RepositoryStats"
+                  timestamp: { type: string, format: date-time }
+        "500":
+          description: Error getting stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/backup/files/{snapshotId}:
+    get:
+      tags: [Files]
+      summary: List files in snapshot (via restic ls --json)
+      operationId: listFilesInSnapshot
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: snapshotId
+          required: true
+          schema: { type: string }
+          description: Snapshot ID (e.g., short or full). Some setups allow 'latest'.
+        - in: query
+          name: path
+          required: false
+          schema: { type: string }
+          description: Optional subpath (directory) to list
+      responses:
+        "200":
+          description: Files listed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  count: { type: integer }
+                  items:
+                    type: array
+                    description: >
+                      Newline-delimited JSON events merged from restic ls --json.
+                      Each item is a node describing a file or directory.
+                    items:
+                      $ref: "#/components/schemas/ResticNode"
+        "400":
+          description: Missing parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: restic error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/backup/dump/{snapshotId}/{filePath}:
+    get:
+      tags: [Files]
+      summary: Download a specific file from a snapshot (via restic dump)
+      operationId: dumpFile
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: snapshotId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: filePath
+          required: true
+          schema: { type: string }
+          description: URL-encoded path inside snapshot. Encode slashes as part of the path.
+          example: servers/world.zip
+      responses:
+        "200":
+          description: File stream
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: Attachment filename
+            Content-Type:
+              schema: { type: string }
+              description: application/octet-stream by default
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Missing parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: restic error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    RetentionPolicy:
+      type: object
+      properties:
+        keepLast: { type: integer, example: 0 }
+        keepDaily: { type: integer, example: 7 }
+        keepWeekly: { type: integer, example: 0 }
+        keepMonthly: { type: integer, example: 0 }
+
+    BackupSummary:
+      type: object
+      properties:
+        snapshotId:
+          type: string
+          nullable: true
+        filesNew:
+          type: integer
+        filesChanged:
+          type: integer
+        filesUnmodified:
+          type: integer
+        dirsNew:
+          type: integer
+        dirsChanged:
+          type: integer
+        dirsUnmodified:
+          type: integer
+        dataAdded:
+          type: integer
+          description: Bytes added in this backup
+        totalFilesProcessed:
+          type: integer
+        totalBytesProcessed:
+          type: integer
+        totalDuration:
+          type: number
+          description: Seconds
+
+    BackupResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+        backup:
+          oneOf:
+            - $ref: "#/components/schemas/BackupSummary"
+            - type: object
+              description: Generic backup object if your implementation returns raw restic JSON
+        retention:
+          type: object
+          properties:
+            removed: { type: integer }
+            kept: { type: integer }
+        timestamp: { type: string, format: date-time }
+
+    Snapshot:
+      type: object
+      properties:
+        id: { type: string }
+        short_id: { type: string }
+        time: { type: string, format: date-time }
+        hostname: { type: string }
+        username: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        paths:
+          type: array
+          items: { type: string }
+
+    RepositoryStats:
+      type: object
+      properties:
+        totalSize: { type: integer, description: Bytes }
+        totalSizeHuman: { type: string }
+        totalFileCount: { type: integer }
+        snapshotCount: { type: integer }
+
+    ResticNode:
+      type: object
+      description: One line of restic ls --json output parsed as an object
+      properties:
+        type:
+          type: string
+          description: Usually "node"
+        path:
+          type: string
+        name:
+          type: string
+        mode:
+          type: integer
+          nullable: true
+        uid:
+          type: integer
+          nullable: true
+        gid:
+          type: integer
+          nullable: true
+        size:
+          type: integer
+          nullable: true
+        mtime:
+          type: string
+          format: date-time
+          nullable: true
+        atime:
+          type: string
+          format: date-time
+          nullable: true
+        ctime:
+          type: string
+          format: date-time
+          nullable: true
+        links:
+          type: integer
+          nullable: true
+        ino:
+          type: integer
+          nullable: true
+        content:
+          type: array
+          items: { type: string }
+          nullable: true
+
+    SimpleOkResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        message: { type: string }
+        timestamp: { type: string, format: date-time }
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
